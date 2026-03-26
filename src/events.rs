@@ -2,20 +2,21 @@ use bevy::{
     ecs::{
         component::Component,
         entity::{Entity, EntityHashSet},
-        event::{Event, EventWriter, Events, ManualEventReader},
-        system::{Local, Query, Resource},
+        hierarchy::ChildOf,
+        message::{Message, MessageWriter, Messages, MessageCursor},
+        resource::Resource,
+        system::{Local, Query},
         world::World,
     },
-    hierarchy::Parent,
     prelude::EntityWorldMut,
     ui::RelativeCursorPosition,
 };
-use bevy_mod_picking::events::{Click, Down, Out, Over, Pointer, Up};
+use bevy::picking::events::{Click, Out, Over, Pointer, Press, Release};
 use std::{any::Any, mem, rc::Rc};
 
 // TODO: Other events
 pub mod events {
-    use bevy_mod_picking::pointer::PointerButton;
+    use bevy::picking::pointer::PointerButton;
 
     super::impl_event! [
         ();
@@ -35,42 +36,42 @@ pub mod events {
 
 #[derive(Resource, Default)]
 pub struct EventReaders {
-    click: ManualEventReader<Pointer<Click>>,
-    click_down: ManualEventReader<Pointer<Down>>,
-    click_up: ManualEventReader<Pointer<Up>>,
-    mouse_over: ManualEventReader<Pointer<Over>>,
-    mouse_out: ManualEventReader<Pointer<Out>>,
-    mouse_enter: ManualEventReader<MouseEnter>,
-    mouse_exit: ManualEventReader<MouseExit>,
+    click: MessageCursor<Pointer<Click>>,
+    click_down: MessageCursor<Pointer<Press>>,
+    click_up: MessageCursor<Pointer<Release>>,
+    mouse_over: MessageCursor<Pointer<Over>>,
+    mouse_out: MessageCursor<Pointer<Out>>,
+    mouse_enter: MessageCursor<MouseEnter>,
+    mouse_exit: MessageCursor<MouseExit>,
 }
 
 impl EventReaders {
     #[allow(clippy::too_many_arguments)]
     pub fn read_events(
         &mut self,
-        click: &Events<Pointer<Click>>,
-        click_down: &Events<Pointer<Down>>,
-        click_up: &Events<Pointer<Up>>,
-        mouse_over: &Events<Pointer<Over>>,
-        mouse_out: &Events<Pointer<Out>>,
-        mouse_enter: &Events<MouseEnter>,
-        mouse_exit: &Events<MouseExit>,
+        click: &Messages<Pointer<Click>>,
+        click_down: &Messages<Pointer<Press>>,
+        click_up: &Messages<Pointer<Release>>,
+        mouse_over: &Messages<Pointer<Over>>,
+        mouse_out: &Messages<Pointer<Out>>,
+        mouse_enter: &Messages<MouseEnter>,
+        mouse_exit: &Messages<MouseExit>,
     ) -> Vec<(Entity, &'static str, Rc<dyn Any>, bool)> {
         let mut events: Vec<(Entity, &'static str, Rc<dyn Any>, bool)> = Vec::new();
         for event in self.click.read(click) {
-            events.push((event.target, "click", Rc::new(event.button), true));
+            events.push((event.entity, "click", Rc::new(event.event.button), true));
         }
         for event in self.click_down.read(click_down) {
-            events.push((event.target, "click_down", Rc::new(event.button), true));
+            events.push((event.entity, "click_down", Rc::new(event.event.button), true));
         }
         for event in self.click_up.read(click_up) {
-            events.push((event.target, "click_up", Rc::new(event.button), true));
+            events.push((event.entity, "click_up", Rc::new(event.event.button), true));
         }
         for event in self.mouse_over.read(mouse_over) {
-            events.push((event.target, "mouse_over", Rc::new(()), false));
+            events.push((event.entity, "mouse_over", Rc::new(()), false));
         }
         for event in self.mouse_out.read(mouse_out) {
-            events.push((event.target, "mouse_out", Rc::new(()), false));
+            events.push((event.entity, "mouse_out", Rc::new(()), false));
         }
         for event in self.mouse_enter.read(mouse_enter) {
             events.push((event.target, "mouse_enter", Rc::new(()), false));
@@ -153,8 +154,8 @@ pub fn bubble_event(event_name: &str, target_entity: &mut Entity, world: &World)
 
 fn bubble_event_helper<T: Component>(target_entity: &mut Entity, world: &World) {
     while !world.entity(*target_entity).contains::<T>() {
-        *target_entity = match world.entity(*target_entity).get::<Parent>() {
-            Some(parent) => parent.get(),
+        *target_entity = match world.entity(*target_entity).get::<ChildOf>() {
+            Some(child_of) => child_of.parent(),
             None => return,
         };
     }
@@ -166,26 +167,26 @@ pub fn generate_mouse_enter_leave_events(
     entities: Query<(Entity, &RelativeCursorPosition)>,
     mut previous_over: Local<EntityHashSet>,
     mut over: Local<EntityHashSet>,
-    mut enter: EventWriter<MouseEnter>,
-    mut leave: EventWriter<MouseExit>,
+    mut enter: MessageWriter<MouseEnter>,
+    mut leave: MessageWriter<MouseExit>,
 ) {
     mem::swap::<EntityHashSet>(&mut previous_over, &mut over);
 
     over.clear();
     for (entity, relative_cursor_position) in &entities {
-        if relative_cursor_position.mouse_over() {
+        if relative_cursor_position.cursor_over() {
             over.insert(entity);
         }
     }
 
-    enter.send_batch(
+    enter.write_batch(
         over.iter()
             .copied()
             .filter(|entity| !previous_over.contains(entity))
             .map(|target| MouseEnter { target }),
     );
 
-    leave.send_batch(
+    leave.write_batch(
         previous_over
             .iter()
             .copied()
@@ -194,12 +195,12 @@ pub fn generate_mouse_enter_leave_events(
     );
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct MouseEnter {
     target: Entity,
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct MouseExit {
     target: Entity,
 }
@@ -222,16 +223,22 @@ macro_rules! impl_event {
     ) => {
         $(
             $( #[$attr] )*
-            #[inline]
-            pub fn $name<E: crate::events::EventReturn<T>, T>(mut _f: impl FnMut(dioxus::dioxus_core::Event<$data>) -> E + 'static) -> dioxus::dioxus_core::Attribute {
-                dioxus::dioxus_core::Attribute::new(
-                    crate::events::impl_event!(@name $name $($js_name)?),
-                    dioxus::dioxus_core::AttributeValue::listener(move |e: dioxus::dioxus_core::Event<$data>| {
-                        _f(e).spawn();
-                    }),
-                    None,
-                    false,
-                ).into()
+            #[allow(non_camel_case_types)]
+            pub struct $name;
+            impl $name {
+                // dioxus 0.6 rsx! macro calls `::call_with_explicit_closure` when the handler
+                // is an explicit closure expression (the common case).
+                #[inline]
+                pub fn call_with_explicit_closure<E: crate::events::EventReturn<T>, T>(mut _f: impl FnMut(dioxus::dioxus_core::Event<$data>) -> E + 'static) -> dioxus::dioxus_core::Attribute {
+                    dioxus::dioxus_core::Attribute::new(
+                        crate::events::impl_event!(@name $name $($js_name)?),
+                        dioxus::dioxus_core::AttributeValue::listener(move |e: dioxus::dioxus_core::Event<$data>| {
+                            _f(e).spawn();
+                        }),
+                        None,
+                        false,
+                    ).into()
+                }
             }
         )*
     };

@@ -4,15 +4,17 @@ use bevy::{
         component::ComponentId,
         // event::{Event, EventIterator, Events, ManualEventReader},
         query::{QueryFilter, ReadOnlyQueryData},
-        system::{Query, Resource, SystemState},
+        system::{Query, SystemState},
+        resource::Resource,
         world::World,
     },
-    utils::{HashMap, HashSet},
 };
+use std::collections::{HashMap, HashSet};
 use dioxus::{
     dioxus_core::{use_hook, ScopeId},
-    prelude::{consume_context, current_scope_id, use_drop},
+    prelude::{consume_context, use_drop},
 };
+use dioxus::dioxus_core::current_scope_id;
 use std::any::TypeId;
 
 #[derive(Default)]
@@ -37,7 +39,7 @@ impl EcsContext {
 pub fn use_world<'a>() -> &'a World {
     let world = EcsContext::get_world();
 
-    let scope_id = current_scope_id().unwrap();
+    let scope_id = current_scope_id();
     let subscription_manager = use_hook(|| {
         let subscription_manager = &mut world
             .non_send_resource_mut::<UiContext>()
@@ -57,7 +59,7 @@ pub fn use_resource<'a, T: Resource>() -> &'a T {
     let world = EcsContext::get_world();
 
     let resource_id = world.components().resource_id::<T>().unwrap();
-    let scope_id = current_scope_id().unwrap();
+    let scope_id = current_scope_id();
     let subscription_manager = use_hook(|| {
         let subscription_manager = &mut world
             .non_send_resource_mut::<UiContext>()
@@ -95,7 +97,7 @@ where
 {
     let world = EcsContext::get_world();
 
-    let scope_id = current_scope_id().unwrap();
+    let scope_id = current_scope_id();
     let subscription_manager = use_hook(|| {
         let subscription_manager = &mut world
             .non_send_resource_mut::<UiContext>()
@@ -133,7 +135,7 @@ where
     Q: ReadOnlyQueryData,
     F: QueryFilter,
 {
-    pub fn query(&mut self) -> Query<Q, F> {
+    pub fn query(&mut self) -> Query<'_, '_, Q, F> {
         self.system_state.get(self.world_ref)
     }
 }

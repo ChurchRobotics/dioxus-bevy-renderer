@@ -71,35 +71,43 @@ macro_rules! node_attributes {
 #[allow(non_camel_case_types, non_upper_case_globals)]
 pub mod dioxus_elements {
     pub use crate::events::events;
+    // Re-export elements directly so `dioxus_elements::node` (attribute path) works
+    pub use self::elements::*;
 
     pub type AttributeDescription = (&'static str, Option<&'static str>, bool);
     const NAME_SPACE: Option<&'static str> = Some("bevy_ui");
 
-    pub struct node;
-    impl node {
-        pub const TAG_NAME: &'static str = "node";
-        pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
-        node_attributes!();
-    }
+    // dioxus 0.6 rsx! macro looks up TAG_NAME via `dioxus_elements::elements::<tag>::TAG_NAME`
+    pub mod elements {
+        use super::AttributeDescription;
+        use super::NAME_SPACE;
 
-    pub struct text;
-    impl text {
-        pub const TAG_NAME: &'static str = "text";
-        pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
-        pub const text: AttributeDescription = ("text", None, false);
-        pub const text_direction: AttributeDescription = ("text_direction", None, false);
-        pub const text_multiline_justification: AttributeDescription =
-            ("text_multiline_justification", None, false);
-        pub const text_size: AttributeDescription = ("text_size", None, false);
-        pub const text_color: AttributeDescription = ("text_color", None, false);
-        node_attributes!();
-    }
+        pub struct node;
+        impl node {
+            pub const TAG_NAME: &'static str = "node";
+            pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
+            node_attributes!();
+        }
 
-    pub struct image;
-    impl image {
-        pub const TAG_NAME: &'static str = "image";
-        pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
-        pub const image_asset_path: AttributeDescription = ("image_asset_path", None, false);
-        node_attributes!();
+        pub struct text;
+        impl text {
+            pub const TAG_NAME: &'static str = "text";
+            pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
+            pub const text: AttributeDescription = ("text", None, false);
+            pub const text_direction: AttributeDescription = ("text_direction", None, false);
+            pub const text_multiline_justification: AttributeDescription =
+                ("text_multiline_justification", None, false);
+            pub const text_size: AttributeDescription = ("text_size", None, false);
+            pub const text_color: AttributeDescription = ("text_color", None, false);
+            node_attributes!();
+        }
+
+        pub struct image;
+        impl image {
+            pub const TAG_NAME: &'static str = "image";
+            pub const NAME_SPACE: Option<&'static str> = NAME_SPACE;
+            pub const image_asset_path: AttributeDescription = ("image_asset_path", None, false);
+            node_attributes!();
+        }
     }
 }

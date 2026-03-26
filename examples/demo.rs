@@ -1,16 +1,18 @@
-use bevy::{prelude::*, reflect::TypeInfo};
-use bevy_dioxus::{colors::*, prelude::*};
-use bevy_mod_picking::DefaultPickingPlugins;
+use bevy::{prelude::*, reflect::TypeInfo, winit::WinitSettings};
+use dioxus_bevy_renderer::{colors::*, prelude::*};
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, DioxusUiPlugin, DefaultPickingPlugins))
+        .add_plugins((DefaultPlugins, DioxusUiPlugin))
+        // Power-saving mode: only re-render on events (ideal for App/editor usage).
+        // Remove this line if you need continuous rendering (e.g. games).
+        .insert_resource(WinitSettings::desktop_app())
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn(DioxusUiBundle {
                 dioxus_ui_root: DioxusUiRoot(Editor),
-                node_bundle: NodeBundle::default(),
+                node: Node::default(),
             });
-            commands.spawn((Camera2dBundle::default(), Name::new("Camera")));
+            commands.spawn((Camera2d::default(), Name::new("Camera")));
         })
         .run();
 }
@@ -33,7 +35,7 @@ fn Editor() -> Element {
 
 #[component]
 fn SceneTree(selected_entity: Signal<Option<Entity>, SyncStorage>) -> Element {
-    let mut entities = use_query_filtered::<(Entity, DebugName), Without<Node>>();
+    let mut entities = use_query_filtered::<(Entity, Option<&Name>), Without<Node>>();
     let entities = entities.query();
     let mut entities = entities.into_iter().collect::<Vec<_>>();
     entities.sort_by_key(|(entity, _)| *entity);
@@ -60,9 +62,9 @@ fn SceneTree(selected_entity: Signal<Option<Entity>, SyncStorage>) -> Element {
                         base_color: if Some(entity) == selected_entity() { Some(VIOLET_700.to_owned()) } else { None },
                         click_color: if Some(entity) == selected_entity() { Some(VIOLET_400.to_owned()) } else { None },
                         hover_color: if Some(entity) == selected_entity() { Some(VIOLET_500.to_owned()) } else { None },
-                        match name.name {
-                            Some(name) => format!("{name}"),
-                            _ => format!("Entity ({:?})", name.entity)
+                        match name {
+                            Some(name) => format!("{}", name.as_str()),
+                            None => format!("Entity ({:?})", entity)
                         }
                     }
                 }
@@ -82,27 +84,30 @@ fn SceneTree(selected_entity: Signal<Option<Entity>, SyncStorage>) -> Element {
 }
 
 #[component]
-fn EntityInspector(selected_entity: ReadOnlySignal<Option<Entity>, SyncStorage>) -> Element {
+fn EntityInspector(selected_entity: ReadSignal<Option<Entity>, SyncStorage>) -> Element {
     let world = use_world();
     let type_registry = use_resource::<AppTypeRegistry>().read();
     let components = selected_entity()
-        .map(|selected_entity| {
-            let entity_ref = world.get_entity(selected_entity).unwrap();
+        .and_then(|selected_entity| {
+            let entity_ref = world.get_entity(selected_entity).ok()?;
             let mut components = entity_ref
                 .archetype()
                 .components()
-                .map(|component_id| {
-                    let component_info = world.components().get_info(component_id).unwrap();
+                .iter()
+                .filter_map(|component_id| {
+                    let component_info = world.components().get_info(*component_id)?;
                     let type_info = component_info
                         .type_id()
                         .and_then(|type_id| type_registry.get_type_info(type_id));
-                    let (_, name) = component_info.name().rsplit_once("::").unwrap();
-                    let (crate_name, _) = component_info.name().split_once("::").unwrap();
-                    (name, crate_name, type_info)
+                    let full_name = component_info.name();
+                    let full_name_str: &str = &*full_name;
+                    let name = full_name_str.rsplit_once("::").map(|(_, s)| s).unwrap_or(full_name_str);
+                    let crate_name = full_name_str.split_once("::").map(|(s, _)| s).unwrap_or(full_name_str);
+                    Some((name.to_owned(), crate_name.to_owned(), type_info))
                 })
                 .collect::<Vec<_>>();
-            components.sort_by_key(|(name, _, _)| *name);
-            components
+            components.sort_by_key(|(name, _, _)| name.clone());
+            Some(components)
         })
         .unwrap_or_default();
 
@@ -152,7 +157,8 @@ fn component_inspector<'a>(type_info: &'a TypeInfo) -> Element {
             TypeInfo::Array(_) => rsx! { "TODO" },
             TypeInfo::Map(_) => rsx! { "TODO" },
             TypeInfo::Enum(_) => rsx! { "TODO" },
-            TypeInfo::Value(_) => rsx! { "TODO" },
+            TypeInfo::Set(_) => rsx! { "TODO" },
+            TypeInfo::Opaque(_) => rsx! { "TODO" },
         }
     }
 }

@@ -23,12 +23,11 @@ use bevy::{
         bundle::Bundle,
         component::Component,
         entity::{Entity, EntityHashMap},
-        schedule::IntoSystemConfigs,
     },
     prelude::Deref,
-    ui::{node_bundles::NodeBundle, ui_focus_system},
-    utils::HashMap,
+    ui::Node,
 };
+use std::collections::HashMap;
 use dioxus::dioxus_core::{Element, ElementId, VirtualDom};
 
 pub mod prelude {
@@ -42,7 +41,7 @@ pub mod prelude {
     };
     pub use super::elements::*;
     pub use super::{DioxusUiBundle, DioxusUiPlugin, DioxusUiRoot};
-    pub use bevy_mod_picking::pointer::PointerButton;
+    pub use bevy::picking::pointer::PointerButton;
     pub use dioxus;
     pub use dioxus::prelude::{Event as DioxusEvent, *};
 }
@@ -59,11 +58,11 @@ impl Plugin for DioxusUiPlugin {
         app.init_non_send_resource::<UiContext>()
             .init_resource::<DeferredSystemRunQueue>()
             .init_resource::<EventReaders>()
-            .add_event::<MouseEnter>()
-            .add_event::<MouseExit>()
+            .add_message::<MouseEnter>()
+            .add_message::<MouseExit>()
             .add_systems(
                 PreUpdate,
-                generate_mouse_enter_leave_events.after(ui_focus_system),
+                generate_mouse_enter_leave_events,
             )
             .add_systems(Last, tick_dioxus_ui);
     }
@@ -72,11 +71,25 @@ impl Plugin for DioxusUiPlugin {
 #[derive(Bundle)]
 pub struct DioxusUiBundle {
     pub dioxus_ui_root: DioxusUiRoot,
-    pub node_bundle: NodeBundle,
+    pub node: Node,
 }
 
-#[derive(Component, Deref, Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Component, Deref, Clone, Copy)]
 pub struct DioxusUiRoot(pub fn() -> Element);
+
+impl PartialEq for DioxusUiRoot {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::fn_addr_eq(self.0, other.0)
+    }
+}
+
+impl Eq for DioxusUiRoot {}
+
+impl std::hash::Hash for DioxusUiRoot {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.0 as usize).hash(state);
+    }
+}
 
 #[derive(Default)]
 struct UiContext {
@@ -88,7 +101,7 @@ struct UiRoot {
     virtual_dom: VirtualDom,
     element_id_to_bevy_ui_entity: HashMap<ElementId, Entity>,
     bevy_ui_entity_to_element_id: EntityHashMap<ElementId>,
-    templates: HashMap<String, BevyTemplate>,
+    templates: HashMap<usize, BevyTemplate>,
     needs_rebuild: bool,
 }
 

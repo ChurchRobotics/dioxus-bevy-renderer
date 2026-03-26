@@ -11,9 +11,8 @@ use bevy::{
         entity::Entity,
         world::{Mut, World},
     },
-    utils::HashMap,
 };
-use std::{any::Any, mem, rc::Rc};
+use std::{any::Any, collections::HashMap, mem, rc::Rc};
 
 pub fn tick_dioxus_ui(world: &mut World) {
     run_deferred_systems(world);
@@ -58,7 +57,7 @@ pub fn tick_dioxus_ui(world: &mut World) {
 fn run_deferred_systems(world: &mut World) {
     for mut system in mem::take(&mut *world.resource_mut::<DeferredSystemRunQueue>().run_queue) {
         system.initialize(world);
-        system.run((), world);
+        let _ = system.run((), world);
     }
 }
 
@@ -67,14 +66,14 @@ fn dispatch_ui_events(
     ui_root: &mut UiRoot,
     world: &World,
 ) {
-    for (mut target, name, data, bubbles) in events {
+    for (target, name, data, bubbles) in events {
+        let mut target = *target;
         if *bubbles {
             bubble_event(name, &mut target, world);
         }
         if let Some(target_element_id) = ui_root.bevy_ui_entity_to_element_id.get(&target) {
-            ui_root
-                .virtual_dom
-                .handle_event(name, Rc::clone(data), *target_element_id, *bubbles);
+            let event = dioxus::dioxus_core::Event::new(Rc::clone(data), *bubbles);
+            ui_root.virtual_dom.runtime().handle_event(name, event, *target_element_id);
         }
     }
 }

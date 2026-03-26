@@ -3,7 +3,6 @@ use bevy::ecs::world::World;
 use dioxus::dioxus_core::{Template, VirtualDom};
 use dioxus_hot_reload::{connect, HotReloadMsg};
 use dioxus_rsx::HotReloadingContext;
-use std::sync::mpsc::{channel, Receiver};
 
 pub fn update_templates(world: &mut World, virtual_dom: &mut VirtualDom) {
     if !world.contains_non_send::<Receiver<Template>>() {

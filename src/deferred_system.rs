@@ -1,5 +1,5 @@
 use crate::ecs_hooks::EcsContext;
-use bevy::ecs::system::{IntoSystem, Resource, System};
+use bevy::ecs::{resource::Resource, system::{IntoSystem, System}};
 
 #[derive(Resource, Default)]
 pub struct DeferredSystemRunQueue {
