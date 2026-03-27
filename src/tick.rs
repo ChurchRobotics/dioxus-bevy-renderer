@@ -2,7 +2,7 @@ use crate::{
     apply_mutations::MutationApplier,
     deferred_system::DeferredSystemRunQueue,
     ecs_hooks::EcsContext,
-    events::{bubble_event, EventReaders},
+    events::{bubble_event, PendingUiEvents},
     DioxusUiRoot, UiContext, UiRoot,
 };
 use bevy::{
@@ -17,17 +17,7 @@ use std::{any::Any, collections::HashMap, mem, rc::Rc};
 pub fn tick_dioxus_ui(world: &mut World) {
     run_deferred_systems(world);
 
-    let ui_events = world.resource_scope(|world, mut event_readers: Mut<EventReaders>| {
-        event_readers.read_events(
-            world.resource(),
-            world.resource(),
-            world.resource(),
-            world.resource(),
-            world.resource(),
-            world.resource(),
-            world.resource(),
-        )
-    });
+    let ui_events = mem::take(&mut world.non_send_resource_mut::<PendingUiEvents>().0);
 
     let root_entities: HashMap<Entity, DioxusUiRoot> = world
         .query::<(Entity, &DioxusUiRoot)>()
@@ -62,7 +52,7 @@ fn run_deferred_systems(world: &mut World) {
 }
 
 fn dispatch_ui_events(
-    events: &Vec<(Entity, &str, Rc<dyn Any>, bool)>,
+    events: &[(Entity, &str, Rc<dyn Any>, bool)],
     ui_root: &mut UiRoot,
     world: &World,
 ) {

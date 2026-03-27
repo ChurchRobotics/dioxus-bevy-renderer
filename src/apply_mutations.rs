@@ -48,6 +48,21 @@ impl<'a> MutationApplier<'a> {
             stack: vec![root_entity],
         }
     }
+
+    fn remove_entity_from_maps(&mut self, entity: Entity) {
+        if let Some(element_id) = self.bevy_ui_entity_to_element_id.remove(&entity) {
+            self.element_id_to_bevy_ui_entity.remove(&element_id);
+        }
+        let children: Vec<Entity> = self
+            .world
+            .entity(entity)
+            .get::<Children>()
+            .map(|c| c.iter().copied().collect())
+            .unwrap_or_default();
+        for child in children {
+            self.remove_entity_from_maps(child);
+        }
+    }
 }
 
 impl<'a> WriteMutations for MutationApplier<'a> {
@@ -113,12 +128,8 @@ impl<'a> WriteMutations for MutationApplier<'a> {
         existing_parent
             .insert_children(existing_index, &self.stack.split_off(self.stack.len() - m));
 
+        self.remove_entity_from_maps(existing);
         self.world.entity_mut(existing).despawn();
-        // TODO: We're not removing child entities from the element maps
-        if let Some(existing_element_id) = self.bevy_ui_entity_to_element_id.remove(&existing) {
-            self.element_id_to_bevy_ui_entity
-                .remove(&existing_element_id);
-        }
     }
 
     fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
@@ -138,12 +149,8 @@ impl<'a> WriteMutations for MutationApplier<'a> {
         existing_parent
             .insert_children(existing_index, &self.stack.split_off(self.stack.len() - m));
 
+        self.remove_entity_from_maps(existing);
         self.world.entity_mut(existing).despawn();
-        // TODO: We're not removing child entities from the element maps
-        if let Some(existing_element_id) = self.bevy_ui_entity_to_element_id.remove(&existing) {
-            self.element_id_to_bevy_ui_entity
-                .remove(&existing_element_id);
-        }
     }
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
@@ -250,12 +257,8 @@ impl<'a> WriteMutations for MutationApplier<'a> {
 
     fn remove_node(&mut self, id: ElementId) {
         let entity = self.element_id_to_bevy_ui_entity[&id];
+        self.remove_entity_from_maps(entity);
         self.world.entity_mut(entity).despawn();
-        // TODO: We're not removing child entities from the element maps
-        if let Some(existing_element_id) = self.bevy_ui_entity_to_element_id.remove(&entity) {
-            self.element_id_to_bevy_ui_entity
-                .remove(&existing_element_id);
-        }
     }
 
     fn push_root(&mut self, id: ElementId) {
@@ -360,22 +363,14 @@ impl BevyTemplateNode {
                 namespace: None,
                 ..
             } => {
-                bevy::log::warn!("Unsupported bevy_dioxus tag `{tag}` — rendering placeholder node.");
-                Self::Node {
-                    style: StyleComponents::default(),
-                    children: Box::new([]),
-                }
+                panic!("Encountered unsupported bevy_dioxus tag `{tag}`.")
             }
             TemplateNode::Element {
                 tag,
                 namespace: Some(namespace),
                 ..
             } => {
-                bevy::log::warn!("Unsupported bevy_dioxus tag `{namespace}::{tag}` — rendering placeholder node.");
-                Self::Node {
-                    style: StyleComponents::default(),
-                    children: Box::new([]),
-                }
+                panic!("Encountered unsupported bevy_dioxus tag `{namespace}::{tag}`.")
             }
         }
     }

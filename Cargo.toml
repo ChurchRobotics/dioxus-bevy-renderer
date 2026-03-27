@@ -1,10 +1,10 @@
 [package]
-name = "dioxus-bevy-renderer"
+name = "dioxus-bevy"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18", features = ["dynamic_linking"] }
+bevy = { version = "0.18", default-features = false, features = ["ui", "dynamic_linking", "debug"] }
 dioxus = { version = "0.7", default-features = false, features = [
     "macro",
     "signals",
@@ -14,11 +14,9 @@ dioxus-rsx = { version = "0.7", optional = true }
 
 [features]
 hot_reload = ["dioxus-rsx"]
-debug = []
 
 [[example]]
 name = "demo"
 
 [profile.dev]
 opt-level = 1
-debug = true

@@ -14,7 +14,11 @@ use self::{
     apply_mutations::BevyTemplate,
     deferred_system::DeferredSystemRunQueue,
     ecs_hooks::EcsSubscriptions,
-    events::{generate_mouse_enter_leave_events, EventReaders, MouseEnter, MouseExit},
+    events::{
+        generate_mouse_enter_leave_events,
+        on_pointer_click, on_pointer_out, on_pointer_over, on_pointer_press, on_pointer_release,
+        PendingUiEvents,
+    },
     tick::tick_dioxus_ui,
 };
 use bevy::{
@@ -42,8 +46,7 @@ pub mod prelude {
     pub use super::elements::*;
     pub use super::{DioxusUiBundle, DioxusUiPlugin, DioxusUiRoot};
     pub use bevy::picking::pointer::PointerButton;
-    pub use dioxus;
-    pub use dioxus::prelude::{Event as DioxusEvent, *};
+    pub use dioxus::prelude::{Event as DioxusEvent};
 }
 
 pub struct DioxusUiPlugin;
@@ -56,10 +59,13 @@ impl Plugin for DioxusUiPlugin {
         >::default());
 
         app.init_non_send_resource::<UiContext>()
+            .init_non_send_resource::<PendingUiEvents>()
             .init_resource::<DeferredSystemRunQueue>()
-            .init_resource::<EventReaders>()
-            .add_message::<MouseEnter>()
-            .add_message::<MouseExit>()
+            .add_observer(on_pointer_click)
+            .add_observer(on_pointer_press)
+            .add_observer(on_pointer_release)
+            .add_observer(on_pointer_over)
+            .add_observer(on_pointer_out)
             .add_systems(
                 PreUpdate,
                 generate_mouse_enter_leave_events,
@@ -74,20 +80,12 @@ pub struct DioxusUiBundle {
     pub node: Node,
 }
 
-#[derive(Component, Deref, Clone, Copy)]
+#[derive(Component, Deref, Hash, Eq, Clone, Copy)]
 pub struct DioxusUiRoot(pub fn() -> Element);
 
 impl PartialEq for DioxusUiRoot {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::fn_addr_eq(self.0, other.0)
-    }
-}
-
-impl Eq for DioxusUiRoot {}
-
-impl std::hash::Hash for DioxusUiRoot {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (self.0 as usize).hash(state);
     }
 }
 

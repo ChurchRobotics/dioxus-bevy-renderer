@@ -2,16 +2,16 @@ use bevy::{
     ecs::{
         component::Component,
         entity::{Entity, EntityHashSet},
+        event::EntityEvent,
         hierarchy::ChildOf,
-        message::{Message, MessageWriter, Messages, MessageCursor},
-        resource::Resource,
-        system::{Local, Query},
+        observer::On,
+        system::{Local, NonSendMut, Query},
         world::World,
     },
+    picking::events::{Click, Out, Over, Pointer, Press, Release},
     prelude::EntityWorldMut,
     ui::RelativeCursorPosition,
 };
-use bevy::picking::events::{Click, Out, Over, Pointer, Press, Release};
 use std::{any::Any, mem, rc::Rc};
 
 // TODO: Other events
@@ -34,54 +34,8 @@ pub mod events {
     ];
 }
 
-#[derive(Resource, Default)]
-pub struct EventReaders {
-    click: MessageCursor<Pointer<Click>>,
-    click_down: MessageCursor<Pointer<Press>>,
-    click_up: MessageCursor<Pointer<Release>>,
-    mouse_over: MessageCursor<Pointer<Over>>,
-    mouse_out: MessageCursor<Pointer<Out>>,
-    mouse_enter: MessageCursor<MouseEnter>,
-    mouse_exit: MessageCursor<MouseExit>,
-}
-
-impl EventReaders {
-    #[allow(clippy::too_many_arguments)]
-    pub fn read_events(
-        &mut self,
-        click: &Messages<Pointer<Click>>,
-        click_down: &Messages<Pointer<Press>>,
-        click_up: &Messages<Pointer<Release>>,
-        mouse_over: &Messages<Pointer<Over>>,
-        mouse_out: &Messages<Pointer<Out>>,
-        mouse_enter: &Messages<MouseEnter>,
-        mouse_exit: &Messages<MouseExit>,
-    ) -> Vec<(Entity, &'static str, Rc<dyn Any>, bool)> {
-        let mut events: Vec<(Entity, &'static str, Rc<dyn Any>, bool)> = Vec::new();
-        for event in self.click.read(click) {
-            events.push((event.entity, "click", Rc::new(event.event.button), true));
-        }
-        for event in self.click_down.read(click_down) {
-            events.push((event.entity, "click_down", Rc::new(event.event.button), true));
-        }
-        for event in self.click_up.read(click_up) {
-            events.push((event.entity, "click_up", Rc::new(event.event.button), true));
-        }
-        for event in self.mouse_over.read(mouse_over) {
-            events.push((event.entity, "mouse_over", Rc::new(()), false));
-        }
-        for event in self.mouse_out.read(mouse_out) {
-            events.push((event.entity, "mouse_out", Rc::new(()), false));
-        }
-        for event in self.mouse_enter.read(mouse_enter) {
-            events.push((event.target, "mouse_enter", Rc::new(()), false));
-        }
-        for event in self.mouse_exit.read(mouse_exit) {
-            events.push((event.target, "mouse_exit", Rc::new(()), false));
-        }
-        events
-    }
-}
+#[derive(Default)]
+pub struct PendingUiEvents(pub Vec<(Entity, &'static str, Rc<dyn Any>, bool)>);
 
 pub fn insert_event_listener(name: &str, mut entity: EntityWorldMut<'_>) {
     match name {
@@ -167,8 +121,7 @@ pub fn generate_mouse_enter_leave_events(
     entities: Query<(Entity, &RelativeCursorPosition)>,
     mut previous_over: Local<EntityHashSet>,
     mut over: Local<EntityHashSet>,
-    mut enter: MessageWriter<MouseEnter>,
-    mut leave: MessageWriter<MouseExit>,
+    mut pending: NonSendMut<PendingUiEvents>,
 ) {
     mem::swap::<EntityHashSet>(&mut previous_over, &mut over);
 
@@ -179,30 +132,46 @@ pub fn generate_mouse_enter_leave_events(
         }
     }
 
-    enter.write_batch(
-        over.iter()
-            .copied()
-            .filter(|entity| !previous_over.contains(entity))
-            .map(|target| MouseEnter { target }),
-    );
+    for entity in over.iter().copied().filter(|e| !previous_over.contains(e)) {
+        pending.0.push((entity, "mouse_enter", Rc::new(()), false));
+    }
 
-    leave.write_batch(
-        previous_over
-            .iter()
-            .copied()
-            .filter(|entity| !over.contains(entity))
-            .map(|target| MouseExit { target }),
-    );
+    for entity in previous_over.iter().copied().filter(|e| !over.contains(e)) {
+        pending.0.push((entity, "mouse_exit", Rc::new(()), false));
+    }
 }
 
-#[derive(Message)]
-pub struct MouseEnter {
-    target: Entity,
+// Global observers that capture picking EntityEvents and write directly to PendingUiEvents.
+// Filtered to `original_event_target()` so propagation doesn't produce duplicate entries.
+
+pub fn on_pointer_click(on: On<Pointer<Click>>, mut pending: NonSendMut<PendingUiEvents>) {
+    if on.event_target() == on.original_event_target() {
+        pending.0.push((on.event_target(), "click", Rc::new(on.event.button), true));
+    }
 }
 
-#[derive(Message)]
-pub struct MouseExit {
-    target: Entity,
+pub fn on_pointer_press(on: On<Pointer<Press>>, mut pending: NonSendMut<PendingUiEvents>) {
+    if on.event_target() == on.original_event_target() {
+        pending.0.push((on.event_target(), "click_down", Rc::new(on.event.button), true));
+    }
+}
+
+pub fn on_pointer_release(on: On<Pointer<Release>>, mut pending: NonSendMut<PendingUiEvents>) {
+    if on.event_target() == on.original_event_target() {
+        pending.0.push((on.event_target(), "click_up", Rc::new(on.event.button), true));
+    }
+}
+
+pub fn on_pointer_over(on: On<Pointer<Over>>, mut pending: NonSendMut<PendingUiEvents>) {
+    if on.event_target() == on.original_event_target() {
+        pending.0.push((on.event_target(), "mouse_over", Rc::new(()), false));
+    }
+}
+
+pub fn on_pointer_out(on: On<Pointer<Out>>, mut pending: NonSendMut<PendingUiEvents>) {
+    if on.event_target() == on.original_event_target() {
+        pending.0.push((on.event_target(), "mouse_out", Rc::new(()), false));
+    }
 }
 
 // ----------------------------------------------------------------------------

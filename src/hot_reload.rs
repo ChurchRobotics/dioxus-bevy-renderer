@@ -4,6 +4,7 @@ use dioxus::dioxus_core::{Template, VirtualDom};
 use dioxus_hot_reload::{connect, HotReloadMsg};
 use dioxus_rsx::HotReloadingContext;
 
+// TODO: need migrate to dioxus 0.7
 pub fn update_templates(world: &mut World, virtual_dom: &mut VirtualDom) {
     if !world.contains_non_send::<Receiver<Template>>() {
         let (updated_templates_sender, updated_templates_receiver) = channel();
